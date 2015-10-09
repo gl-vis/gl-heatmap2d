@@ -181,7 +181,7 @@ proto.update = function(options) {
   var xs = 1.0 / (hix - lox)
   var ys = 1.0 / (hiy - loy)
 
-  var numVerts  = shape[0] * shape[1] * WEIGHTS.length
+  var numVerts  = shape[0] * shape[1] * (WEIGHTS.length>>>1)
 
   this.numVertices = numVerts
 
@@ -191,7 +191,7 @@ proto.update = function(options) {
 
   var numX = shape[0]
   var numY = shape[1]
-  
+
   this.shape = [numX, numY]
 
   var ptr = 0
@@ -203,9 +203,9 @@ proto.update = function(options) {
       var xc0 = xs * (x[i] - lox)
       var xc1 = xs * (x[i+1] - lox)
 
-      for(var dd=0; dd<WEIGHTS.length; ++dd) {
-        var dx = WEIGHTS[2*dd]
-        var dy = WEIGHTS[2*dd+1]
+      for(var dd=0; dd<WEIGHTS.length; dd+=2) {
+        var dx = WEIGHTS[dd]
+        var dy = WEIGHTS[dd+1]
         var offset = (j+dy)*numX + (i+dx)
         var zc = z[offset]
         var colorIdx = bsearch.le(colorLevels, zc)
