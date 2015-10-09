@@ -19,7 +19,7 @@ void main() {
   id.w += floor(id.z / 256.0);
   id.z -= floor(id.z / 256.0) * 256.0;
 
-  fragId = id;
+  fragId = id / 255.0;
 
   vec3 vPosition = viewTransform * vec3(position, 1.0);
   gl_Position = vec4(vPosition.xy, 0, vPosition.z);
