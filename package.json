@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "2D heatmap plots",
   "main": "heatmap.js",
-  "scripts": {
-    "test": "tape test/*.js"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gl-vis/gl-heatmap2d.git"
@@ -16,10 +13,20 @@
     "gl-plot2d",
     "webgl"
   ],
+  "browserify": {
+    "transform": [
+      "glslify"
+    ]
+  },
   "author": "Mikola Lysenko",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/gl-vis/gl-heatmap2d/issues"
   },
-  "homepage": "https://github.com/gl-vis/gl-heatmap2d#readme"
+  "homepage": "https://github.com/gl-vis/gl-heatmap2d#readme",
+  "dependencies": {
+    "binary-search-bounds": "^2.0.3",
+    "gl-buffer": "^2.1.2",
+    "gl-shader": "^4.0.5"
+  }
 }

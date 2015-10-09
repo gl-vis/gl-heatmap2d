@@ -61,8 +61,6 @@ proto.update = function(options) {
   var colorValues = options.colorValues || [0, 0, 0, 1]
   var colorCount  = colorLevels.length
 
-  var filterLinear = !!options.interpolate
-
   var bounds = this.bounds
   var lox = bounds[0] = x[0]
   var loy = bounds[1] = y[0]
@@ -73,6 +71,8 @@ proto.update = function(options) {
   var ys = 1.0 / (hiy - loy)
 
   var numVerts  = shape[0] * shape[1]
+
+
   var colors    = pool.mallocUint8Array(numVerts * 4)
   var positions = pool.mallocFloat32Array(numVerts * 2)
   var ids       = pool.mallocUint32Array(numVerts)
