@@ -1,0 +1,25 @@
+{
+  "name": "gl-heatmap2d",
+  "version": "1.0.0",
+  "description": "2D heatmap plots",
+  "main": "heatmap.js",
+  "scripts": {
+    "test": "tape test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gl-vis/gl-heatmap2d.git"
+  },
+  "keywords": [
+    "heatmap",
+    "2d",
+    "gl-plot2d",
+    "webgl"
+  ],
+  "author": "Mikola Lysenko",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/gl-vis/gl-heatmap2d/issues"
+  },
+  "homepage": "https://github.com/gl-vis/gl-heatmap2d#readme"
+}
