@@ -15,12 +15,14 @@ function GLHeatmap2D (
   shader,
   pickShader,
   positionBuffer,
+  weightBuffer,
   colorBuffer,
   idBuffer) {
   this.plot = plot
   this.shader = shader
   this.pickShader = pickShader
   this.positionBuffer = positionBuffer
+  this.weightBuffer = weightBuffer
   this.colorBuffer = colorBuffer
   this.idBuffer = idBuffer
   this.xData = []
@@ -76,9 +78,14 @@ proto.draw = (function () {
     var uniforms = shader.uniforms
     uniforms.viewTransform = MATRIX
 
+    uniforms.shape = this.shape
+
     var attributes = shader.attributes
     this.positionBuffer.bind()
     attributes.position.pointer()
+
+    this.weightBuffer.bind()
+    attributes.weight.pointer(gl.UNSIGNED_BYTE, false)
 
     this.colorBuffer.bind()
     attributes.color.pointer(gl.UNSIGNED_BYTE, true)
@@ -130,10 +137,14 @@ proto.drawPick = (function () {
     var uniforms = shader.uniforms
     uniforms.viewTransform = MATRIX
     uniforms.pickOffset = PICK_VECTOR
+    uniforms.shape = this.shape
 
     var attributes = shader.attributes
     this.positionBuffer.bind()
     attributes.position.pointer()
+
+    this.weightBuffer.bind()
+    attributes.weight.pointer(gl.UNSIGNED_BYTE, false)
 
     this.idBuffer.bind()
     attributes.pickId.pointer(gl.UNSIGNED_BYTE, false)
@@ -193,6 +204,7 @@ proto.update = function (options) {
 
   var colors = pool.mallocUint8(numVerts * 4)
   var positions = pool.mallocFloat32(numVerts * 2)
+  var weights   = pool.mallocUint8 (numVerts * 2)
   var ids = pool.mallocUint32(numVerts)
 
   var numX = shape[0]
@@ -243,8 +255,11 @@ proto.update = function (options) {
         colors[4 * ptr + 2] = 255 * b
         colors[4 * ptr + 3] = 255 * a
 
-        positions[2 * ptr] = (1 - dx) * xc0 + dx * xc1
-        positions[2 * ptr + 1] = (1 - dy) * yc0 + dy * yc1
+        positions[2*ptr] = xc0*.5 + xc1*.5;
+        positions[2*ptr+1] = yc0*.5 + yc1*.5;
+
+        weights[2*ptr] = dx;
+        weights[2*ptr+1] = dy;
 
         ids[ptr] = j * numX + i
 
@@ -254,11 +269,13 @@ proto.update = function (options) {
   }
 
   this.positionBuffer.update(positions)
+  this.weightBuffer.update(weights)
   this.colorBuffer.update(colors)
   this.idBuffer.update(ids)
 
   pool.free(positions)
   pool.free(colors)
+  pool.free(weights)
   pool.free(ids)
 }
 
@@ -266,6 +283,7 @@ proto.dispose = function () {
   this.shader.dispose()
   this.pickShader.dispose()
   this.positionBuffer.dispose()
+  this.weightBuffer.dispose()
   this.colorBuffer.dispose()
   this.idBuffer.dispose()
   this.plot.removeObject(this)
@@ -278,6 +296,7 @@ function createHeatmap2D (plot, options) {
   var pickShader = createShader(gl, shaders.pickVertex, shaders.pickFragment)
 
   var positionBuffer = createBuffer(gl)
+  var weightBuffer   = createBuffer(gl)
   var colorBuffer = createBuffer(gl)
   var idBuffer = createBuffer(gl)
 
@@ -286,6 +305,7 @@ function createHeatmap2D (plot, options) {
     shader,
     pickShader,
     positionBuffer,
+    weightBuffer,
     colorBuffer,
     idBuffer)
 
