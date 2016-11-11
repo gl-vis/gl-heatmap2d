@@ -198,7 +198,12 @@ proto.update = function (options) {
   var xs = 1.0 / (hix - lox)
   var ys = 1.0 / (hiy - loy)
 
-  var numVerts = shape[0] * shape[1] * (WEIGHTS.length >>> 1)
+  var numX = shape[0]
+  var numY = shape[1]
+
+  this.shape = [numX, numY]
+
+  var numVerts = (numX - 1) * (numY - 1) * (WEIGHTS.length >>> 1)
 
   this.numVertices = numVerts
 
@@ -206,11 +211,6 @@ proto.update = function (options) {
   var positions = pool.mallocFloat32(numVerts * 2)
   var weights   = pool.mallocUint8 (numVerts * 2)
   var ids = pool.mallocUint8(numVerts)
-
-  var numX = shape[0]
-  var numY = shape[1]
-
-  this.shape = [numX, numY]
 
   var ptr = 0
 
