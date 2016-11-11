@@ -205,7 +205,7 @@ proto.update = function (options) {
   var colors = pool.mallocUint8(numVerts * 4)
   var positions = pool.mallocFloat32(numVerts * 2)
   var weights   = pool.mallocUint8 (numVerts * 2)
-  var ids = pool.mallocUint32(numVerts)
+  var ids = pool.mallocUint8(numVerts)
 
   var numX = shape[0]
   var numY = shape[1]
