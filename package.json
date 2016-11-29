@@ -1,6 +1,6 @@
 {
   "name": "gl-heatmap2d",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "2D heatmap plots",
   "main": "heatmap.js",
   "repository": {
