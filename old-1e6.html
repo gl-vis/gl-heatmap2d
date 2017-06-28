@@ -2154,8 +2154,6 @@ process.chdir = function (dir) {
 process.umask = function() { return 0; };
 
 },{}],5:[function(require,module,exports){
-require('enable-mobile')
-
 var fit = require('canvas-fit')
 var mouseWheel = require('mouse-wheel')
 var mouseChange = require('mouse-change')
@@ -2314,7 +2312,7 @@ function render() {
 }
 
 render()
-},{"../":6,"canvas-fit":37,"enable-mobile":57,"fps-indicator":58,"gl-plot2d":72,"gl-select-box":74,"gl-spikes2d":83,"mouse-change":99,"mouse-wheel":101}],6:[function(require,module,exports){
+},{"../":6,"canvas-fit":37,"fps-indicator":56,"gl-plot2d":69,"gl-select-box":71,"gl-spikes2d":80,"mouse-change":95,"mouse-wheel":97}],6:[function(require,module,exports){
 'use strict'
 
 module.exports = createHeatmap2D
@@ -2332,14 +2330,12 @@ function GLHeatmap2D (
   shader,
   pickShader,
   positionBuffer,
-  weightBuffer,
   colorBuffer,
   idBuffer) {
   this.plot = plot
   this.shader = shader
   this.pickShader = pickShader
   this.positionBuffer = positionBuffer
-  this.weightBuffer = weightBuffer
   this.colorBuffer = colorBuffer
   this.idBuffer = idBuffer
   this.xData = []
@@ -2395,14 +2391,9 @@ proto.draw = (function () {
     var uniforms = shader.uniforms
     uniforms.viewTransform = MATRIX
 
-    uniforms.shape = this.shape
-
     var attributes = shader.attributes
     this.positionBuffer.bind()
     attributes.position.pointer()
-
-    this.weightBuffer.bind()
-    attributes.weight.pointer(gl.UNSIGNED_BYTE, false)
 
     this.colorBuffer.bind()
     attributes.color.pointer(gl.UNSIGNED_BYTE, true)
@@ -2454,14 +2445,10 @@ proto.drawPick = (function () {
     var uniforms = shader.uniforms
     uniforms.viewTransform = MATRIX
     uniforms.pickOffset = PICK_VECTOR
-    uniforms.shape = this.shape
 
     var attributes = shader.attributes
     this.positionBuffer.bind()
     attributes.position.pointer()
-
-    this.weightBuffer.bind()
-    attributes.weight.pointer(gl.UNSIGNED_BYTE, false)
 
     this.idBuffer.bind()
     attributes.pickId.pointer(gl.UNSIGNED_BYTE, false)
@@ -2515,19 +2502,18 @@ proto.update = function (options) {
   var xs = 1.0 / (hix - lox)
   var ys = 1.0 / (hiy - loy)
 
-  var numX = shape[0]
-  var numY = shape[1]
-
-  this.shape = [numX, numY]
-
-  var numVerts = (numX - 1) * (numY - 1) * (WEIGHTS.length >>> 1)
+  var numVerts = shape[0] * shape[1] * (WEIGHTS.length >>> 1)
 
   this.numVertices = numVerts
 
   var colors = pool.mallocUint8(numVerts * 4)
   var positions = pool.mallocFloat32(numVerts * 2)
-  var weights   = pool.mallocUint8 (numVerts * 2)
   var ids = pool.mallocUint32(numVerts)
+
+  var numX = shape[0]
+  var numY = shape[1]
+
+  this.shape = [numX, numY]
 
   var ptr = 0
 
@@ -2572,11 +2558,8 @@ proto.update = function (options) {
         colors[4 * ptr + 2] = 255 * b
         colors[4 * ptr + 3] = 255 * a
 
-        positions[2*ptr] = xc0*.5 + xc1*.5;
-        positions[2*ptr+1] = yc0*.5 + yc1*.5;
-
-        weights[2*ptr] = dx;
-        weights[2*ptr+1] = dy;
+        positions[2 * ptr] = (1 - dx) * xc0 + dx * xc1
+        positions[2 * ptr + 1] = (1 - dy) * yc0 + dy * yc1
 
         ids[ptr] = j * numX + i
 
@@ -2586,13 +2569,11 @@ proto.update = function (options) {
   }
 
   this.positionBuffer.update(positions)
-  this.weightBuffer.update(weights)
   this.colorBuffer.update(colors)
   this.idBuffer.update(ids)
 
   pool.free(positions)
   pool.free(colors)
-  pool.free(weights)
   pool.free(ids)
 }
 
@@ -2600,7 +2581,6 @@ proto.dispose = function () {
   this.shader.dispose()
   this.pickShader.dispose()
   this.positionBuffer.dispose()
-  this.weightBuffer.dispose()
   this.colorBuffer.dispose()
   this.idBuffer.dispose()
   this.plot.removeObject(this)
@@ -2613,7 +2593,6 @@ function createHeatmap2D (plot, options) {
   var pickShader = createShader(gl, shaders.pickVertex, shaders.pickFragment)
 
   var positionBuffer = createBuffer(gl)
-  var weightBuffer   = createBuffer(gl)
   var colorBuffer = createBuffer(gl)
   var idBuffer = createBuffer(gl)
 
@@ -2622,7 +2601,6 @@ function createHeatmap2D (plot, options) {
     shader,
     pickShader,
     positionBuffer,
-    weightBuffer,
     colorBuffer,
     idBuffer)
 
@@ -2631,16 +2609,16 @@ function createHeatmap2D (plot, options) {
 
   return heatmap
 }
-},{"./lib/shaders":7,"binary-search-bounds":27,"gl-buffer":62,"gl-shader":76,"iota-array":97,"typedarray-pool":147}],7:[function(require,module,exports){
+},{"./lib/shaders":7,"binary-search-bounds":27,"gl-buffer":59,"gl-shader":73,"iota-array":93,"typedarray-pool":142}],7:[function(require,module,exports){
 'use strict'
 
 
 
 module.exports = {
   fragment:     "precision lowp float;\n#define GLSLIFY 1\nvarying vec4 fragColor;\nvoid main() {\n  gl_FragColor = vec4(fragColor.rgb * fragColor.a, fragColor.a);\n}\n",
-  vertex:       "precision mediump float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nattribute vec4 color;\nattribute vec2 weight;\n\nuniform vec2 shape;\nuniform mat3 viewTransform;\n\nvarying vec4 fragColor;\n\nvoid main() {\n  vec3 vPosition = viewTransform * vec3( position + (weight-.5)/(shape-1.) , 1.0);\n  fragColor = color;\n  gl_Position = vec4(vPosition.xy, 0, vPosition.z);\n}\n",
-  pickFragment: "precision mediump float;\n#define GLSLIFY 1\n\nvarying vec4 fragId;\nvarying vec2 vWeight;\n\nuniform vec2 shape;\nuniform vec4 pickOffset;\n\nvoid main() {\n  vec2 d = step(.5, vWeight);\n  vec4 id = fragId + pickOffset;\n  id.x += d.x + d.y*shape.x;\n\n  id.y += floor(id.x / 256.0);\n  id.x -= floor(id.x / 256.0) * 256.0;\n\n  id.z += floor(id.y / 256.0);\n  id.y -= floor(id.y / 256.0) * 256.0;\n\n  id.w += floor(id.z / 256.0);\n  id.z -= floor(id.z / 256.0) * 256.0;\n\n  gl_FragColor = id/255.;\n}\n",
-  pickVertex:   "precision mediump float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nattribute vec4 pickId;\nattribute vec2 weight;\n\nuniform vec2 shape;\nuniform mat3 viewTransform;\n\nvarying vec4 fragId;\nvarying vec2 vWeight;\n\nvoid main() {\n  vWeight = weight;\n\n  fragId = pickId;\n\n  vec3 vPosition = viewTransform * vec3( position + (weight-.5)/(shape-1.) , 1.0);\n  gl_Position = vec4(vPosition.xy, 0, vPosition.z);\n}\n"
+  vertex:       "precision mediump float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nattribute vec4 color;\n\nuniform mat3 viewTransform;\n\nvarying vec4 fragColor;\n\nvoid main() {\n  vec3 vPosition = viewTransform * vec3(position, 1.0);\n  fragColor = color;\n  gl_Position = vec4(vPosition.xy, 0, vPosition.z);\n}\n",
+  pickFragment: "precision lowp float;\n#define GLSLIFY 1\nvarying vec4 fragId;\nvoid main() {\n  gl_FragColor = fragId;\n}\n",
+  pickVertex:   "precision mediump float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nattribute vec4 pickId;\n\nuniform mat3 viewTransform;\nuniform vec4 pickOffset;\n\nvarying vec4 fragId;\n\nvoid main() {\n  vec4 id = pickId + pickOffset;\n  id.y += floor(id.x / 256.0);\n  id.x -= floor(id.x / 256.0) * 256.0;\n\n  id.z += floor(id.y / 256.0);\n  id.y -= floor(id.y / 256.0) * 256.0;\n\n  id.w += floor(id.z / 256.0);\n  id.z -= floor(id.z / 256.0) * 256.0;\n\n  fragId = id / 255.0;\n\n  vec3 vPosition = viewTransform * vec3(position, 1.0);\n  gl_Position = vec4(vPosition.xy, 0, vPosition.z);\n}\n"
 }
 },{}],8:[function(require,module,exports){
 var padLeft = require('pad-left')
@@ -2660,7 +2638,7 @@ function addLineNumbers (string, start, delim) {
   }).join('\n')
 }
 
-},{"pad-left":107}],9:[function(require,module,exports){
+},{"pad-left":103}],9:[function(require,module,exports){
 'use strict';
 module.exports = function (val) {
 	if (val === null || val === undefined) {
@@ -5758,7 +5736,7 @@ function boxIntersectWrapper(arg0, arg1, arg2) {
       throw new Error('box-intersect: Invalid arguments')
   }
 }
-},{"./lib/intersect":32,"./lib/sweep":36,"typedarray-pool":147}],31:[function(require,module,exports){
+},{"./lib/intersect":32,"./lib/sweep":36,"typedarray-pool":142}],31:[function(require,module,exports){
 'use strict'
 
 var DIMENSION   = 'd'
@@ -6398,7 +6376,7 @@ function boxIntersectIter(
     }
   }
 }
-},{"./brute":31,"./median":33,"./partition":34,"./sweep":36,"bit-twiddle":28,"typedarray-pool":147}],33:[function(require,module,exports){
+},{"./brute":31,"./median":33,"./partition":34,"./sweep":36,"bit-twiddle":28,"typedarray-pool":142}],33:[function(require,module,exports){
 'use strict'
 
 module.exports = findMedian
@@ -7234,7 +7212,7 @@ red_loop:
     }
   }
 }
-},{"./sort":35,"bit-twiddle":28,"typedarray-pool":147}],37:[function(require,module,exports){
+},{"./sort":35,"bit-twiddle":28,"typedarray-pool":142}],37:[function(require,module,exports){
 var size = require('element-size')
 
 module.exports = fit
@@ -7485,7 +7463,7 @@ function delaunayRefine(points, triangulation) {
   }
 }
 
-},{"binary-search-bounds":27,"robust-in-sphere":124}],40:[function(require,module,exports){
+},{"binary-search-bounds":27,"robust-in-sphere":120}],40:[function(require,module,exports){
 'use strict'
 
 var bsearch = require('binary-search-bounds')
@@ -7856,7 +7834,7 @@ function monotoneTriangulate(points, edges) {
   return cells
 }
 
-},{"binary-search-bounds":27,"robust-orientation":125}],42:[function(require,module,exports){
+},{"binary-search-bounds":27,"robust-orientation":121}],42:[function(require,module,exports){
 'use strict'
 
 var bsearch = require('binary-search-bounds')
@@ -8324,7 +8302,7 @@ function cleanPSLG(points, edges, colors) {
   return modified
 }
 
-},{"./lib/rat-seg-intersect":44,"big-rat":14,"big-rat/cmp":12,"big-rat/to-float":26,"box-intersect":30,"compare-cell":47,"nextafter":105,"rat-vec":119,"robust-segment-intersect":128,"union-find":148}],44:[function(require,module,exports){
+},{"./lib/rat-seg-intersect":44,"big-rat":14,"big-rat/cmp":12,"big-rat/to-float":26,"box-intersect":30,"compare-cell":47,"nextafter":101,"rat-vec":115,"robust-segment-intersect":124,"union-find":143}],44:[function(require,module,exports){
 'use strict'
 
 //TODO: Move this to a separate module
@@ -8370,7 +8348,7 @@ function solveIntersection(a, b, c, d) {
   return rvAdd(a, rvMuls(ba, t))
 }
 
-},{"big-rat/div":13,"big-rat/mul":23,"big-rat/sign":24,"big-rat/sub":25,"big-rat/to-float":26,"rat-vec/add":118,"rat-vec/muls":120,"rat-vec/sub":121}],45:[function(require,module,exports){
+},{"big-rat/div":13,"big-rat/mul":23,"big-rat/sign":24,"big-rat/sub":25,"big-rat/to-float":26,"rat-vec/add":114,"rat-vec/muls":116,"rat-vec/sub":117}],45:[function(require,module,exports){
 "use strict"
 
 module.exports = compareAngle
@@ -8456,7 +8434,7 @@ function compareAngle(a, b, c, d) {
     }
   }
 }
-},{"robust-orientation":125,"robust-product":126,"robust-sum":130,"signum":46,"two-sum":145}],46:[function(require,module,exports){
+},{"robust-orientation":121,"robust-product":122,"robust-sum":126,"signum":46,"two-sum":141}],46:[function(require,module,exports){
 "use strict"
 
 module.exports = function signum(x) {
@@ -8985,7 +8963,7 @@ function generateCWiseOp(proc, typesig) {
   return f()
 }
 module.exports = generateCWiseOp
-},{"uniq":149}],50:[function(require,module,exports){
+},{"uniq":144}],50:[function(require,module,exports){
 "use strict"
 
 // The function below is called when constructing a cwise function object, and does the following:
@@ -9262,7 +9240,7 @@ function edgeToAdjacency(edges, numVertices) {
   }
   return adj
 }
-},{"uniq":149}],55:[function(require,module,exports){
+},{"uniq":144}],55:[function(require,module,exports){
 module.exports = getSize
 
 function getSize(element) {
@@ -9299,84 +9277,6 @@ function parse(prop) {
 }
 
 },{}],56:[function(require,module,exports){
-if (!Array.prototype.fill) {
-  Array.prototype.fill = function(value) {
-
-    // Steps 1-2.
-    if (this == null) {
-      throw new TypeError('this is null or not defined');
-    }
-
-    var O = Object(this);
-
-    // Steps 3-5.
-    var len = O.length >>> 0;
-
-    // Steps 6-7.
-    var start = arguments[1];
-    var relativeStart = start >> 0;
-
-    // Step 8.
-    var k = relativeStart < 0 ?
-      Math.max(len + relativeStart, 0) :
-      Math.min(relativeStart, len);
-
-    // Steps 9-10.
-    var end = arguments[2];
-    var relativeEnd = end === undefined ?
-      len : end >> 0;
-
-    // Step 11.
-    var final = relativeEnd < 0 ?
-      Math.max(len + relativeEnd, 0) :
-      Math.min(relativeEnd, len);
-
-    // Step 12.
-    while (k < final) {
-      O[k] = value;
-      k++;
-    }
-
-    // Step 13.
-    return O;
-  };
-}
-},{}],57:[function(require,module,exports){
-require('./arr-fill');
-require('typedarray-methods');
-require('get-float-time-domain-data');
-var css = require('insert-styles');
-
-
-css("/*! normalize.css v7.0.0 | MIT License | github.com/necolas/normalize.css */\n\n/* Document\n   ========================================================================== */\n\n/**\n * 1. Correct the line height in all browsers.\n * 2. Prevent adjustments of font size after orientation changes in\n *    IE on Windows Phone and in iOS.\n */\n\nhtml {\n  line-height: 1.15; /* 1 */\n  -ms-text-size-adjust: 100%; /* 2 */\n  -webkit-text-size-adjust: 100%; /* 2 */\n}\n\n/* Sections\n   ========================================================================== */\n\n/**\n * Remove the margin in all browsers (opinionated).\n */\n\nbody {\n  margin: 0;\n}\n\n/**\n * Add the correct display in IE 9-.\n */\n\narticle,\naside,\nfooter,\nheader,\nnav,\nsection {\n  display: block;\n}\n\n/**\n * Correct the font size and margin on `h1` elements within `section` and\n * `article` contexts in Chrome, Firefox, and Safari.\n */\n\nh1 {\n  font-size: 2em;\n  margin: 0.67em 0;\n}\n\n/* Grouping content\n   ========================================================================== */\n\n/**\n * Add the correct display in IE 9-.\n * 1. Add the correct display in IE.\n */\n\nfigcaption,\nfigure,\nmain { /* 1 */\n  display: block;\n}\n\n/**\n * Add the correct margin in IE 8.\n */\n\nfigure {\n  margin: 1em 40px;\n}\n\n/**\n * 1. Add the correct box sizing in Firefox.\n * 2. Show the overflow in Edge and IE.\n */\n\nhr {\n  box-sizing: content-box; /* 1 */\n  height: 0; /* 1 */\n  overflow: visible; /* 2 */\n}\n\n/**\n * 1. Correct the inheritance and scaling of font size in all browsers.\n * 2. Correct the odd `em` font sizing in all browsers.\n */\n\npre {\n  font-family: monospace, monospace; /* 1 */\n  font-size: 1em; /* 2 */\n}\n\n/* Text-level semantics\n   ========================================================================== */\n\n/**\n * 1. Remove the gray background on active links in IE 10.\n * 2. Remove gaps in links underline in iOS 8+ and Safari 8+.\n */\n\na {\n  background-color: transparent; /* 1 */\n  -webkit-text-decoration-skip: objects; /* 2 */\n}\n\n/**\n * 1. Remove the bottom border in Chrome 57- and Firefox 39-.\n * 2. Add the correct text decoration in Chrome, Edge, IE, Opera, and Safari.\n */\n\nabbr[title] {\n  border-bottom: none; /* 1 */\n  text-decoration: underline; /* 2 */\n  text-decoration: underline dotted; /* 2 */\n}\n\n/**\n * Prevent the duplicate application of `bolder` by the next rule in Safari 6.\n */\n\nb,\nstrong {\n  font-weight: inherit;\n}\n\n/**\n * Add the correct font weight in Chrome, Edge, and Safari.\n */\n\nb,\nstrong {\n  font-weight: bolder;\n}\n\n/**\n * 1. Correct the inheritance and scaling of font size in all browsers.\n * 2. Correct the odd `em` font sizing in all browsers.\n */\n\ncode,\nkbd,\nsamp {\n  font-family: monospace, monospace; /* 1 */\n  font-size: 1em; /* 2 */\n}\n\n/**\n * Add the correct font style in Android 4.3-.\n */\n\ndfn {\n  font-style: italic;\n}\n\n/**\n * Add the correct background and color in IE 9-.\n */\n\nmark {\n  background-color: #ff0;\n  color: #000;\n}\n\n/**\n * Add the correct font size in all browsers.\n */\n\nsmall {\n  font-size: 80%;\n}\n\n/**\n * Prevent `sub` and `sup` elements from affecting the line height in\n * all browsers.\n */\n\nsub,\nsup {\n  font-size: 75%;\n  line-height: 0;\n  position: relative;\n  vertical-align: baseline;\n}\n\nsub {\n  bottom: -0.25em;\n}\n\nsup {\n  top: -0.5em;\n}\n\n/* Embedded content\n   ========================================================================== */\n\n/**\n * Add the correct display in IE 9-.\n */\n\naudio,\nvideo {\n  display: inline-block;\n}\n\n/**\n * Add the correct display in iOS 4-7.\n */\n\naudio:not([controls]) {\n  display: none;\n  height: 0;\n}\n\n/**\n * Remove the border on images inside links in IE 10-.\n */\n\nimg {\n  border-style: none;\n}\n\n/**\n * Hide the overflow in IE.\n */\n\nsvg:not(:root) {\n  overflow: hidden;\n}\n\n/* Forms\n   ========================================================================== */\n\n/**\n * 1. Change the font styles in all browsers (opinionated).\n * 2. Remove the margin in Firefox and Safari.\n */\n\nbutton,\ninput,\noptgroup,\nselect,\ntextarea {\n  font-family: sans-serif; /* 1 */\n  font-size: 100%; /* 1 */\n  line-height: 1.15; /* 1 */\n  margin: 0; /* 2 */\n}\n\n/**\n * Show the overflow in IE.\n * 1. Show the overflow in Edge.\n */\n\nbutton,\ninput { /* 1 */\n  overflow: visible;\n}\n\n/**\n * Remove the inheritance of text transform in Edge, Firefox, and IE.\n * 1. Remove the inheritance of text transform in Firefox.\n */\n\nbutton,\nselect { /* 1 */\n  text-transform: none;\n}\n\n/**\n * 1. Prevent a WebKit bug where (2) destroys native `audio` and `video`\n *    controls in Android 4.\n * 2. Correct the inability to style clickable types in iOS and Safari.\n */\n\nbutton,\nhtml [type=\"button\"], /* 1 */\n[type=\"reset\"],\n[type=\"submit\"] {\n  -webkit-appearance: button; /* 2 */\n}\n\n/**\n * Remove the inner border and padding in Firefox.\n */\n\nbutton::-moz-focus-inner,\n[type=\"button\"]::-moz-focus-inner,\n[type=\"reset\"]::-moz-focus-inner,\n[type=\"submit\"]::-moz-focus-inner {\n  border-style: none;\n  padding: 0;\n}\n\n/**\n * Restore the focus styles unset by the previous rule.\n */\n\nbutton:-moz-focusring,\n[type=\"button\"]:-moz-focusring,\n[type=\"reset\"]:-moz-focusring,\n[type=\"submit\"]:-moz-focusring {\n  outline: 1px dotted ButtonText;\n}\n\n/**\n * Correct the padding in Firefox.\n */\n\nfieldset {\n  padding: 0.35em 0.75em 0.625em;\n}\n\n/**\n * 1. Correct the text wrapping in Edge and IE.\n * 2. Correct the color inheritance from `fieldset` elements in IE.\n * 3. Remove the padding so developers are not caught out when they zero out\n *    `fieldset` elements in all browsers.\n */\n\nlegend {\n  box-sizing: border-box; /* 1 */\n  color: inherit; /* 2 */\n  display: table; /* 1 */\n  max-width: 100%; /* 1 */\n  padding: 0; /* 3 */\n  white-space: normal; /* 1 */\n}\n\n/**\n * 1. Add the correct display in IE 9-.\n * 2. Add the correct vertical alignment in Chrome, Firefox, and Opera.\n */\n\nprogress {\n  display: inline-block; /* 1 */\n  vertical-align: baseline; /* 2 */\n}\n\n/**\n * Remove the default vertical scrollbar in IE.\n */\n\ntextarea {\n  overflow: auto;\n}\n\n/**\n * 1. Add the correct box sizing in IE 10-.\n * 2. Remove the padding in IE 10-.\n */\n\n[type=\"checkbox\"],\n[type=\"radio\"] {\n  box-sizing: border-box; /* 1 */\n  padding: 0; /* 2 */\n}\n\n/**\n * Correct the cursor style of increment and decrement buttons in Chrome.\n */\n\n[type=\"number\"]::-webkit-inner-spin-button,\n[type=\"number\"]::-webkit-outer-spin-button {\n  height: auto;\n}\n\n/**\n * 1. Correct the odd appearance in Chrome and Safari.\n * 2. Correct the outline style in Safari.\n */\n\n[type=\"search\"] {\n  -webkit-appearance: textfield; /* 1 */\n  outline-offset: -2px; /* 2 */\n}\n\n/**\n * Remove the inner padding and cancel buttons in Chrome and Safari on macOS.\n */\n\n[type=\"search\"]::-webkit-search-cancel-button,\n[type=\"search\"]::-webkit-search-decoration {\n  -webkit-appearance: none;\n}\n\n/**\n * 1. Correct the inability to style clickable types in iOS and Safari.\n * 2. Change font properties to `inherit` in Safari.\n */\n\n::-webkit-file-upload-button {\n  -webkit-appearance: button; /* 1 */\n  font: inherit; /* 2 */\n}\n\n/* Interactive\n   ========================================================================== */\n\n/*\n * Add the correct display in IE 9-.\n * 1. Add the correct display in Edge, IE, and Firefox.\n */\n\ndetails, /* 1 */\nmenu {\n  display: block;\n}\n\n/*\n * Add the correct display in all browsers.\n */\n\nsummary {\n  display: list-item;\n}\n\n/* Scripting\n   ========================================================================== */\n\n/**\n * Add the correct display in IE 9-.\n */\n\ncanvas {\n  display: inline-block;\n}\n\n/**\n * Add the correct display in IE.\n */\n\ntemplate {\n  display: none;\n}\n\n/* Hidden\n   ========================================================================== */\n\n/**\n * Add the correct display in IE 10-.\n */\n\n[hidden] {\n  display: none;\n}\n");
-
-css("\n\thtml {\n\t\ttouch-action: manipulation;\n\t}\n")
-
-addMeta({
-	name: 'viewport',
-	content: 'width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=0'
-});
-addMeta({
-	'http-equiv': 'x-ua-compatible',
-	content: 'ie=edge'
-});
-addMeta({
-	charset: 'utf-8'
-});
-
-
-function addMeta (obj) {
-	var meta = document.createElement('meta');
-	var qs = 'meta';
-	for (var name in obj) {
-		qs += "[" + name + "]"
-		meta.setAttribute(name, obj[name]);
-	}
-	if (!document.querySelector(qs)) {
-		document.head.insertBefore(meta, document.head.firstChild);
-	}
-}
-},{"./arr-fill":56,"get-float-time-domain-data":61,"insert-styles":93,"typedarray-methods":146}],58:[function(require,module,exports){
 /**
  * @module fps-indicator
  */
@@ -9489,7 +9389,7 @@ function fps (opts) {
 		raf(measure);
 	});
 }
-},{"raf":117,"right-now":123,"to-css":141}],59:[function(require,module,exports){
+},{"raf":113,"right-now":119,"to-css":137}],57:[function(require,module,exports){
 "use strict"
 
 module.exports = createRBTree
@@ -10490,7 +10390,7 @@ function defaultCompare(a, b) {
 function createRBTree(compare) {
   return new RedBlackTree(compare || defaultCompare, null)
 }
-},{}],60:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 // transliterated from the python snippet here:
 // http://en.wikipedia.org/wiki/Lanczos_approximation
 
@@ -10559,22 +10459,7 @@ module.exports = function gamma (z) {
 
 module.exports.log = lngamma;
 
-},{}],61:[function(require,module,exports){
-(function (global){
-"use strict";
-
-if (global.AnalyserNode && !global.AnalyserNode.prototype.getFloatTimeDomainData) {
-  var uint8 = new Uint8Array(2048);
-  global.AnalyserNode.prototype.getFloatTimeDomainData = function(array) {
-    this.getByteTimeDomainData(uint8);
-    for (var i = 0, imax = array.length; i < imax; i++) {
-      array[i] = (uint8[i] - 128) * 0.0078125;
-    }
-  };
-}
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],62:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 "use strict"
 
 var pool = require("typedarray-pool")
@@ -10728,7 +10613,7 @@ function createBuffer(gl, data, type, usage) {
 
 module.exports = createBuffer
 
-},{"ndarray":104,"ndarray-ops":103,"typedarray-pool":147}],63:[function(require,module,exports){
+},{"ndarray":100,"ndarray-ops":99,"typedarray-pool":142}],60:[function(require,module,exports){
 module.exports = {
   0: 'NONE',
   1: 'ONE',
@@ -11028,14 +10913,14 @@ module.exports = {
   37444: 'BROWSER_DEFAULT_WEBGL'
 }
 
-},{}],64:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 var gl10 = require('./1.0/numbers')
 
 module.exports = function lookupConstant (number) {
   return gl10[number]
 }
 
-},{"./1.0/numbers":63}],65:[function(require,module,exports){
+},{"./1.0/numbers":60}],62:[function(require,module,exports){
 'use strict'
 
 var createTexture = require('gl-texture2d')
@@ -11506,7 +11391,7 @@ function createFBO(gl, width, height, options) {
     WEBGL_draw_buffers)
 }
 
-},{"gl-texture2d":84}],66:[function(require,module,exports){
+},{"gl-texture2d":81}],63:[function(require,module,exports){
 
 var sprintf = require('sprintf-js').sprintf;
 var glConstants = require('gl-constants/lookup');
@@ -11560,7 +11445,7 @@ function formatCompilerError(errLog, src, type) {
     };
 }
 
-},{"add-line-numbers":8,"gl-constants/lookup":64,"glsl-shader-name":85,"sprintf-js":138}],67:[function(require,module,exports){
+},{"add-line-numbers":8,"gl-constants/lookup":61,"glsl-shader-name":82,"sprintf-js":134}],64:[function(require,module,exports){
 'use strict'
 
 module.exports = createBoxes
@@ -11623,7 +11508,7 @@ function createBoxes(plot) {
   return new Boxes(plot, vbo, shader)
 }
 
-},{"./shaders":70,"gl-buffer":62,"gl-shader":76}],68:[function(require,module,exports){
+},{"./shaders":67,"gl-buffer":59,"gl-shader":73}],65:[function(require,module,exports){
 'use strict'
 
 module.exports = createGrid
@@ -11870,7 +11755,7 @@ function createGrid(plot) {
   return grid
 }
 
-},{"./shaders":70,"binary-search-bounds":27,"gl-buffer":62,"gl-shader":76}],69:[function(require,module,exports){
+},{"./shaders":67,"binary-search-bounds":27,"gl-buffer":59,"gl-shader":73}],66:[function(require,module,exports){
 'use strict'
 
 module.exports = createLines
@@ -11935,7 +11820,7 @@ function createLines(plot) {
   return lines
 }
 
-},{"./shaders":70,"gl-buffer":62,"gl-shader":76}],70:[function(require,module,exports){
+},{"./shaders":67,"gl-buffer":59,"gl-shader":73}],67:[function(require,module,exports){
 'use strict'
 
 
@@ -11953,7 +11838,7 @@ module.exports = {
   tickVert: "precision mediump float;\n#define GLSLIFY 1\n\nattribute vec3 dataCoord;\n\nuniform vec2 dataAxis, dataShift, dataScale, screenOffset, tickScale;\n\nvoid main() {\n  vec2 pos = dataAxis * (dataScale * dataCoord.x + dataShift);\n  gl_Position = vec4(pos + tickScale*dataCoord.yz + screenOffset, 0, 1);\n}\n"
 }
 
-},{}],71:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 'use strict'
 
 module.exports = createTextElements
@@ -12233,7 +12118,7 @@ function createTextElements(plot) {
   return text
 }
 
-},{"./shaders":70,"binary-search-bounds":27,"gl-buffer":62,"gl-shader":76,"text-cache":140}],72:[function(require,module,exports){
+},{"./shaders":67,"binary-search-bounds":27,"gl-buffer":59,"gl-shader":73,"text-cache":136}],69:[function(require,module,exports){
 'use strict'
 
 module.exports = createGLPlot2D
@@ -12820,7 +12705,7 @@ function createGLPlot2D(options) {
   return plot
 }
 
-},{"./lib/box":67,"./lib/grid":68,"./lib/line":69,"./lib/text":71,"gl-select-static":75}],73:[function(require,module,exports){
+},{"./lib/box":64,"./lib/grid":65,"./lib/line":66,"./lib/text":68,"gl-select-static":72}],70:[function(require,module,exports){
 'use strict'
 
 
@@ -12828,7 +12713,7 @@ function createGLPlot2D(options) {
 exports.boxVertex = "precision mediump float;\n#define GLSLIFY 1\n\nattribute vec2 vertex;\n\nuniform vec2 cornerA, cornerB;\n\nvoid main() {\n  gl_Position = vec4(mix(cornerA, cornerB, vertex), 0, 1);\n}\n"
 exports.boxFragment = "precision mediump float;\n#define GLSLIFY 1\n\nuniform vec4 color;\n\nvoid main() {\n  gl_FragColor = color;\n}\n"
 
-},{}],74:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 'use strict'
 
 var createShader = require('gl-shader')
@@ -12954,7 +12839,7 @@ function createSelectBox(plot, options) {
   return selectBox
 }
 
-},{"./lib/shaders":73,"gl-buffer":62,"gl-shader":76}],75:[function(require,module,exports){
+},{"./lib/shaders":70,"gl-buffer":59,"gl-shader":73}],72:[function(require,module,exports){
 'use strict'
 
 module.exports = createSelectBuffer
@@ -13109,7 +12994,7 @@ function createSelectBuffer(gl, shape) {
   return new SelectBuffer(gl, fbo, buffer)
 }
 
-},{"bit-twiddle":28,"cwise/lib/wrapper":51,"gl-fbo":65,"ndarray":104,"typedarray-pool":147}],76:[function(require,module,exports){
+},{"bit-twiddle":28,"cwise/lib/wrapper":51,"gl-fbo":62,"ndarray":100,"typedarray-pool":142}],73:[function(require,module,exports){
 'use strict'
 
 var createUniformWrapper   = require('./lib/create-uniforms')
@@ -13379,7 +13264,7 @@ function createShader(
 
 module.exports = createShader
 
-},{"./lib/GLError":77,"./lib/create-attributes":78,"./lib/create-uniforms":79,"./lib/reflect":80,"./lib/runtime-reflect":81,"./lib/shader-cache":82}],77:[function(require,module,exports){
+},{"./lib/GLError":74,"./lib/create-attributes":75,"./lib/create-uniforms":76,"./lib/reflect":77,"./lib/runtime-reflect":78,"./lib/shader-cache":79}],74:[function(require,module,exports){
 function GLError (rawError, shortMessage, longMessage) {
     this.shortMessage = shortMessage || ''
     this.longMessage = longMessage || ''
@@ -13394,7 +13279,7 @@ GLError.prototype.name = 'GLError'
 GLError.prototype.constructor = GLError
 module.exports = GLError
 
-},{}],78:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 'use strict'
 
 module.exports = createAttributeWrapper
@@ -13659,7 +13544,7 @@ function createAttributeWrapper(
   return obj
 }
 
-},{"./GLError":77}],79:[function(require,module,exports){
+},{"./GLError":74}],76:[function(require,module,exports){
 'use strict'
 
 var coallesceUniforms = require('./reflect')
@@ -13852,7 +13737,7 @@ function createUniformWrapper(gl, wrapper, uniforms, locations) {
   }
 }
 
-},{"./GLError":77,"./reflect":80}],80:[function(require,module,exports){
+},{"./GLError":74,"./reflect":77}],77:[function(require,module,exports){
 'use strict'
 
 module.exports = makeReflectTypes
@@ -13910,7 +13795,7 @@ function makeReflectTypes(uniforms, useIndex) {
   }
   return obj
 }
-},{}],81:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 'use strict'
 
 exports.uniforms    = runtimeUniforms
@@ -13990,7 +13875,7 @@ function runtimeAttributes(gl, program) {
   return result
 }
 
-},{}],82:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 'use strict'
 
 exports.shader   = getShaderReference
@@ -14128,7 +14013,7 @@ function createProgram(gl, vref, fref, attribs, locations) {
   return getCache(gl).getProgram(vref, fref, attribs, locations)
 }
 
-},{"./GLError":77,"gl-format-compiler-error":66,"weakmap-shim":154}],83:[function(require,module,exports){
+},{"./GLError":74,"gl-format-compiler-error":63,"weakmap-shim":149}],80:[function(require,module,exports){
 'use strict'
 
 module.exports = createSpikes2D
@@ -14216,7 +14101,7 @@ function createSpikes2D(plot, options) {
   return spikes
 }
 
-},{}],84:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 'use strict'
 
 var ndarray = require('ndarray')
@@ -14779,7 +14664,7 @@ function createTexture2D(gl) {
   throw new Error('gl-texture2d: Invalid arguments for texture2d constructor')
 }
 
-},{"ndarray":104,"ndarray-ops":103,"typedarray-pool":147}],85:[function(require,module,exports){
+},{"ndarray":100,"ndarray-ops":99,"typedarray-pool":142}],82:[function(require,module,exports){
 var tokenize = require('glsl-tokenizer')
 var atob     = require('atob-lite')
 
@@ -14804,7 +14689,7 @@ function getName(src) {
   }
 }
 
-},{"atob-lite":10,"glsl-tokenizer":92}],86:[function(require,module,exports){
+},{"atob-lite":10,"glsl-tokenizer":89}],83:[function(require,module,exports){
 module.exports = tokenize
 
 var literals100 = require('./lib/literals')
@@ -15168,7 +15053,7 @@ function tokenize(opt) {
   }
 }
 
-},{"./lib/builtins":88,"./lib/builtins-300es":87,"./lib/literals":90,"./lib/literals-300es":89,"./lib/operators":91}],87:[function(require,module,exports){
+},{"./lib/builtins":85,"./lib/builtins-300es":84,"./lib/literals":87,"./lib/literals-300es":86,"./lib/operators":88}],84:[function(require,module,exports){
 // 300es builtins/reserved words that were previously valid in v100
 var v100 = require('./builtins')
 
@@ -15239,7 +15124,7 @@ module.exports = v100.concat([
   , 'textureProjGradOffset'
 ])
 
-},{"./builtins":88}],88:[function(require,module,exports){
+},{"./builtins":85}],85:[function(require,module,exports){
 module.exports = [
   // Keep this list sorted
   'abs'
@@ -15391,7 +15276,7 @@ module.exports = [
   , 'textureCubeGradEXT'
 ]
 
-},{}],89:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 var v100 = require('./literals')
 
 module.exports = v100.slice().concat([
@@ -15481,7 +15366,7 @@ module.exports = v100.slice().concat([
   , 'usampler2DMSArray'
 ])
 
-},{"./literals":90}],90:[function(require,module,exports){
+},{"./literals":87}],87:[function(require,module,exports){
 module.exports = [
   // current
     'precision'
@@ -15576,7 +15461,7 @@ module.exports = [
   , 'using'
 ]
 
-},{}],91:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 module.exports = [
     '<<='
   , '>>='
@@ -15625,7 +15510,7 @@ module.exports = [
   , '}'
 ]
 
-},{}],92:[function(require,module,exports){
+},{}],89:[function(require,module,exports){
 var tokenize = require('./index')
 
 module.exports = tokenizeString
@@ -15640,43 +15525,7 @@ function tokenizeString(str, opt) {
   return tokens
 }
 
-},{"./index":86}],93:[function(require,module,exports){
-(function (global){
-'use strict'
-
-var cache = {}
-
-function noop () {}
-
-module.exports = !global.document ? noop : insertStyles
-
-function insertStyles (styles, options) {
-  var id = options && options.id || styles
-
-  var element = cache[id] = (cache[id] || createStyle(id))
-
-  if ('textContent' in element) {
-    element.textContent = styles
-  } else {
-    element.styleSheet.cssText = styles
-  }
-}
-
-function createStyle (id) {
-  var element = document.getElementById(id)
-
-  if (element) { return element }
-
-  element = document.createElement('style')
-  element.setAttribute('type', 'text/css')
-
-  document.head.appendChild(element)
-
-  return element
-}
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],94:[function(require,module,exports){
+},{"./index":83}],90:[function(require,module,exports){
 "use strict"
 
 var bounds = require("binary-search-bounds")
@@ -16045,7 +15894,7 @@ function createWrapper(intervals) {
   return new IntervalTree(createIntervalTree(intervals))
 }
 
-},{"binary-search-bounds":95}],95:[function(require,module,exports){
+},{"binary-search-bounds":91}],91:[function(require,module,exports){
 "use strict"
 
 function compileSearch(funcName, predicate, reversed, extraArgs, useNdarray, earlyOut) {
@@ -16107,7 +15956,7 @@ module.exports = {
   eq: compileBoundsSearch("-", true, "EQ", true)
 }
 
-},{}],96:[function(require,module,exports){
+},{}],92:[function(require,module,exports){
 "use strict"
 
 function invertPermutation(pi, result) {
@@ -16119,7 +15968,7 @@ function invertPermutation(pi, result) {
 }
 
 module.exports = invertPermutation
-},{}],97:[function(require,module,exports){
+},{}],93:[function(require,module,exports){
 "use strict"
 
 function iota(n) {
@@ -16131,7 +15980,7 @@ function iota(n) {
 }
 
 module.exports = iota
-},{}],98:[function(require,module,exports){
+},{}],94:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -16154,7 +16003,7 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],99:[function(require,module,exports){
+},{}],95:[function(require,module,exports){
 'use strict'
 
 module.exports = mouseListen
@@ -16362,7 +16211,7 @@ function mouseListen(element, callback) {
   return result
 }
 
-},{"mouse-event":100}],100:[function(require,module,exports){
+},{"mouse-event":96}],96:[function(require,module,exports){
 'use strict'
 
 function mouseButtons(ev) {
@@ -16424,7 +16273,7 @@ function mouseRelativeY(ev) {
 }
 exports.y = mouseRelativeY
 
-},{}],101:[function(require,module,exports){
+},{}],97:[function(require,module,exports){
 'use strict'
 
 var toPX = require('to-px')
@@ -16466,7 +16315,7 @@ function mouseWheelListen(element, callback, noScroll) {
   return listener
 }
 
-},{"to-px":142}],102:[function(require,module,exports){
+},{"to-px":138}],98:[function(require,module,exports){
 "use strict"
 
 var pool = require("typedarray-pool")
@@ -16882,7 +16731,7 @@ function createSurfaceExtractor(args) {
     order,
     typesig)
 }
-},{"typedarray-pool":147}],103:[function(require,module,exports){
+},{"typedarray-pool":142}],99:[function(require,module,exports){
 "use strict"
 
 var compile = require("cwise-compiler")
@@ -17343,7 +17192,7 @@ exports.equals = compile({
   funcName: "equals"
 })
 
-},{"cwise-compiler":48}],104:[function(require,module,exports){
+},{"cwise-compiler":48}],100:[function(require,module,exports){
 var iota = require("iota-array")
 var isBuffer = require("is-buffer")
 
@@ -17688,7 +17537,7 @@ function wrappedNDArrayCtor(data, shape, stride, offset) {
 
 module.exports = wrappedNDArrayCtor
 
-},{"iota-array":97,"is-buffer":98}],105:[function(require,module,exports){
+},{"iota-array":93,"is-buffer":94}],101:[function(require,module,exports){
 "use strict"
 
 var doubleBits = require("double-bits")
@@ -17731,7 +17580,7 @@ function nextafter(x, y) {
   }
   return doubleBits.pack(lo, hi)
 }
-},{"double-bits":52}],106:[function(require,module,exports){
+},{"double-bits":52}],102:[function(require,module,exports){
 /*
 object-assign
 (c) Sindre Sorhus
@@ -17825,7 +17674,7 @@ module.exports = shouldUseNative() ? Object.assign : function (target, source) {
 	return to;
 };
 
-},{}],107:[function(require,module,exports){
+},{}],103:[function(require,module,exports){
 /*!
  * pad-left <https://github.com/jonschlinkert/pad-left>
  *
@@ -17841,7 +17690,7 @@ module.exports = function padLeft(str, num, ch) {
   ch = typeof ch !== 'undefined' ? (ch + '') : ' ';
   return repeat(ch, num) + str;
 };
-},{"repeat-string":122}],108:[function(require,module,exports){
+},{"repeat-string":118}],104:[function(require,module,exports){
 module.exports = function parseUnit(str, out) {
     if (!out)
         { out = [ 0, '' ] }
@@ -17852,7 +17701,7 @@ module.exports = function parseUnit(str, out) {
     out[1] = str.match(/[\d.\-\+]*\s*(.*)/)[1] || ''
     return out
 }
-},{}],109:[function(require,module,exports){
+},{}],105:[function(require,module,exports){
 (function (process){
 // Generated by CoffeeScript 1.12.2
 (function() {
@@ -17892,7 +17741,7 @@ module.exports = function parseUnit(str, out) {
 
 
 }).call(this,require('_process'))
-},{"_process":4}],110:[function(require,module,exports){
+},{"_process":4}],106:[function(require,module,exports){
 "use strict"
 
 module.exports = permutationSign
@@ -17944,7 +17793,7 @@ function permutationSign(p) {
     return sgn
   }
 }
-},{"typedarray-pool":147}],111:[function(require,module,exports){
+},{"typedarray-pool":142}],107:[function(require,module,exports){
 "use strict"
 
 var pool = require("typedarray-pool")
@@ -18031,7 +17880,7 @@ function unrank(n, r, p) {
 exports.rank = rank
 exports.unrank = unrank
 
-},{"invert-permutation":96,"typedarray-pool":147}],112:[function(require,module,exports){
+},{"invert-permutation":92,"typedarray-pool":142}],108:[function(require,module,exports){
 "use strict"
 
 module.exports = planarDual
@@ -18162,7 +18011,7 @@ function planarDual(cells, positions) {
   //Combine paths and loops together
   return cycles
 }
-},{"compare-angle":45}],113:[function(require,module,exports){
+},{"compare-angle":45}],109:[function(require,module,exports){
 'use strict'
 
 module.exports = trimLeaves
@@ -18218,7 +18067,7 @@ function trimLeaves(edges, positions) {
   
   return [ nedges, npositions ]
 }
-},{"edges-to-adjacency-list":54}],114:[function(require,module,exports){
+},{"edges-to-adjacency-list":54}],110:[function(require,module,exports){
 'use strict'
 
 module.exports = planarGraphToPolyline
@@ -18423,7 +18272,7 @@ function planarGraphToPolyline(edges, positions) {
 
   return result
 }
-},{"./lib/trim-leaves":113,"edges-to-adjacency-list":54,"planar-dual":112,"point-in-big-polygon":116,"robust-sum":130,"two-product":144,"uniq":149}],115:[function(require,module,exports){
+},{"./lib/trim-leaves":109,"edges-to-adjacency-list":54,"planar-dual":108,"point-in-big-polygon":112,"robust-sum":126,"two-product":140,"uniq":144}],111:[function(require,module,exports){
 "use strict"
 
 function compileSearch(funcName, predicate, reversed, extraArgs, useNdarray, earlyOut) {
@@ -18485,7 +18334,7 @@ module.exports = {
   eq: compileBoundsSearch("-", true, "EQ", true)
 }
 
-},{}],116:[function(require,module,exports){
+},{}],112:[function(require,module,exports){
 module.exports = preprocessPolygon
 
 var orient = require('robust-orientation')[3]
@@ -18637,7 +18486,7 @@ function preprocessPolygon(loops) {
       testSlab)
   }
 }
-},{"binary-search-bounds":115,"interval-tree-1d":94,"robust-orientation":125,"slab-decomposition":137}],117:[function(require,module,exports){
+},{"binary-search-bounds":111,"interval-tree-1d":90,"robust-orientation":121,"slab-decomposition":133}],113:[function(require,module,exports){
 (function (global){
 var now = require('performance-now')
   , root = typeof window === 'undefined' ? global : window
@@ -18713,7 +18562,7 @@ module.exports.polyfill = function() {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"performance-now":109}],118:[function(require,module,exports){
+},{"performance-now":105}],114:[function(require,module,exports){
 'use strict'
 
 var bnadd = require('big-rat/add')
@@ -18729,7 +18578,7 @@ function add(a, b) {
   return r
 }
 
-},{"big-rat/add":11}],119:[function(require,module,exports){
+},{"big-rat/add":11}],115:[function(require,module,exports){
 'use strict'
 
 module.exports = float2rat
@@ -18744,7 +18593,7 @@ function float2rat(v) {
   return result
 }
 
-},{"big-rat":14}],120:[function(require,module,exports){
+},{"big-rat":14}],116:[function(require,module,exports){
 'use strict'
 
 var rat = require('big-rat')
@@ -18762,7 +18611,7 @@ function muls(a, x) {
   return r
 }
 
-},{"big-rat":14,"big-rat/mul":23}],121:[function(require,module,exports){
+},{"big-rat":14,"big-rat/mul":23}],117:[function(require,module,exports){
 'use strict'
 
 var bnsub = require('big-rat/sub')
@@ -18778,7 +18627,7 @@ function sub(a, b) {
   return r
 }
 
-},{"big-rat/sub":25}],122:[function(require,module,exports){
+},{"big-rat/sub":25}],118:[function(require,module,exports){
 /*!
  * repeat-string <https://github.com/jonschlinkert/repeat-string>
  *
@@ -18850,7 +18699,7 @@ function repeat(str, num) {
   return res;
 }
 
-},{}],123:[function(require,module,exports){
+},{}],119:[function(require,module,exports){
 (function (global){
 module.exports =
   global.performance &&
@@ -18861,7 +18710,7 @@ module.exports =
   }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],124:[function(require,module,exports){
+},{}],120:[function(require,module,exports){
 "use strict"
 
 var twoProduct = require("two-product")
@@ -19029,7 +18878,7 @@ function generateInSphereTest() {
 }
 
 generateInSphereTest()
-},{"robust-scale":127,"robust-subtract":129,"robust-sum":130,"two-product":144}],125:[function(require,module,exports){
+},{"robust-scale":123,"robust-subtract":125,"robust-sum":126,"two-product":140}],121:[function(require,module,exports){
 "use strict"
 
 var twoProduct = require("two-product")
@@ -19220,7 +19069,7 @@ function generateOrientationProc() {
 }
 
 generateOrientationProc()
-},{"robust-scale":127,"robust-subtract":129,"robust-sum":130,"two-product":144}],126:[function(require,module,exports){
+},{"robust-scale":123,"robust-subtract":125,"robust-sum":126,"two-product":140}],122:[function(require,module,exports){
 "use strict"
 
 var robustSum = require("robust-sum")
@@ -19250,7 +19099,7 @@ function robustProduct(a, b) {
   }
   return r
 }
-},{"robust-scale":127,"robust-sum":130}],127:[function(require,module,exports){
+},{"robust-scale":123,"robust-sum":126}],123:[function(require,module,exports){
 "use strict"
 
 var twoProduct = require("two-product")
@@ -19301,7 +19150,7 @@ function scaleLinearExpansion(e, scale) {
   g.length = count
   return g
 }
-},{"two-product":144,"two-sum":145}],128:[function(require,module,exports){
+},{"two-product":140,"two-sum":141}],124:[function(require,module,exports){
 "use strict"
 
 module.exports = segmentsIntersect
@@ -19349,7 +19198,7 @@ function segmentsIntersect(a0, a1, b0, b1) {
 
   return true
 }
-},{"robust-orientation":125}],129:[function(require,module,exports){
+},{"robust-orientation":121}],125:[function(require,module,exports){
 "use strict"
 
 module.exports = robustSubtract
@@ -19506,7 +19355,7 @@ function robustSubtract(e, f) {
   g.length = count
   return g
 }
-},{}],130:[function(require,module,exports){
+},{}],126:[function(require,module,exports){
 "use strict"
 
 module.exports = linearExpansionSum
@@ -19663,7 +19512,7 @@ function linearExpansionSum(e, f) {
   g.length = count
   return g
 }
-},{}],131:[function(require,module,exports){
+},{}],127:[function(require,module,exports){
 /**
  * Bit twiddling hacks for JavaScript.
  *
@@ -19868,7 +19717,7 @@ exports.nextCombination = function(v) {
   return (t + 1) | (((~t & -~t) - 1) >>> (countTrailingZeros(v) + 1));
 }
 
-},{}],132:[function(require,module,exports){
+},{}],128:[function(require,module,exports){
 "use strict"; "use restrict";
 
 module.exports = UnionFind;
@@ -19926,7 +19775,7 @@ UnionFind.prototype.link = function(x, y) {
   }
 }
 
-},{}],133:[function(require,module,exports){
+},{}],129:[function(require,module,exports){
 "use strict"; "use restrict";
 
 var bits      = require("bit-twiddle")
@@ -20270,7 +20119,7 @@ function connectedComponents(cells, vertex_count) {
 }
 exports.connectedComponents = connectedComponents
 
-},{"bit-twiddle":131,"union-find":132}],134:[function(require,module,exports){
+},{"bit-twiddle":127,"union-find":128}],130:[function(require,module,exports){
 "use strict"
 
 module.exports = simplifyPolygon
@@ -20542,7 +20391,7 @@ function simplifyPolygon(cells, positions, minArea) {
     edges: ncells
   }
 }
-},{"robust-orientation":125,"simplicial-complex":133}],135:[function(require,module,exports){
+},{"robust-orientation":121,"simplicial-complex":129}],131:[function(require,module,exports){
 "use strict"
 
 module.exports = orderSegments
@@ -20638,7 +20487,7 @@ function orderSegments(b, a) {
   }
   return ar[0] - br[0]
 }
-},{"robust-orientation":125}],136:[function(require,module,exports){
+},{"robust-orientation":121}],132:[function(require,module,exports){
 "use strict"
 
 function compileSearch(funcName, predicate, reversed, extraArgs, useNdarray, earlyOut) {
@@ -20700,7 +20549,7 @@ module.exports = {
   eq: compileBoundsSearch("-", true, "EQ", true)
 }
 
-},{}],137:[function(require,module,exports){
+},{}],133:[function(require,module,exports){
 "use strict"
 
 module.exports = createSlabDecomposition
@@ -20931,7 +20780,7 @@ function createSlabDecomposition(segments) {
   }
   return new SlabDecomposition(slabs, lines, horizontal)
 }
-},{"./lib/order-segments":135,"binary-search-bounds":136,"functional-red-black-tree":59,"robust-orientation":125}],138:[function(require,module,exports){
+},{"./lib/order-segments":131,"binary-search-bounds":132,"functional-red-black-tree":57,"robust-orientation":121}],134:[function(require,module,exports){
 (function(window) {
     var re = {
         not_string: /[^s]/,
@@ -21141,7 +20990,7 @@ function createSlabDecomposition(segments) {
     }
 })(typeof window === "undefined" ? this : window);
 
-},{}],139:[function(require,module,exports){
+},{}],135:[function(require,module,exports){
 "use strict"
 
 module.exports = surfaceNets
@@ -21349,7 +21198,7 @@ function surfaceNets(array,level) {
   }
   return proc(array,level)
 }
-},{"ndarray-extract-contour":102,"triangulate-hypercube":143,"zero-crossings":156}],140:[function(require,module,exports){
+},{"ndarray-extract-contour":98,"triangulate-hypercube":139,"zero-crossings":151}],136:[function(require,module,exports){
 (function (process){
 'use strict'
 
@@ -21439,7 +21288,7 @@ function textGet(font, text, opts) {
 }
 
 }).call(this,require('_process'))
-},{"_process":4,"vectorize-text":150}],141:[function(require,module,exports){
+},{"_process":4,"vectorize-text":145}],137:[function(require,module,exports){
 'use strict';
 var repeatString = require('repeat-string');
 var objectAssign = require('object-assign');
@@ -21569,7 +21418,7 @@ function isAtRule(prop) {
 	return prop.indexOf('@') === 0;
 }
 
-},{"arrify":9,"object-assign":106,"repeat-string":122}],142:[function(require,module,exports){
+},{"arrify":9,"object-assign":102,"repeat-string":118}],138:[function(require,module,exports){
 'use strict'
 
 var parseUnit = require('parse-unit')
@@ -21630,7 +21479,7 @@ function toPX(str, element) {
   }
   return 1
 }
-},{"parse-unit":108}],143:[function(require,module,exports){
+},{"parse-unit":104}],139:[function(require,module,exports){
 "use strict"
 
 module.exports = triangulateCube
@@ -21664,7 +21513,7 @@ function triangulateCube(dimension) {
   }
   return result
 }
-},{"gamma":60,"permutation-parity":110,"permutation-rank":111}],144:[function(require,module,exports){
+},{"gamma":58,"permutation-parity":106,"permutation-rank":107}],140:[function(require,module,exports){
 "use strict"
 
 module.exports = twoProduct
@@ -21698,7 +21547,7 @@ function twoProduct(a, b, result) {
 
   return [ y, x ]
 }
-},{}],145:[function(require,module,exports){
+},{}],141:[function(require,module,exports){
 "use strict"
 
 module.exports = fastTwoSum
@@ -21716,75 +21565,7 @@ function fastTwoSum(a, b, result) {
 	}
 	return [ar+br, x]
 }
-},{}],146:[function(require,module,exports){
-
-/**
- * @module typedarray-polyfill
- */
-
-var methods = ['values', 'sort', 'some', 'slice', 'reverse', 'reduceRight', 'reduce', 'map', 'keys', 'lastIndexOf', 'join', 'indexOf', 'includes', 'forEach', 'find', 'findIndex', 'copyWithin', 'filter', 'entries', 'every', 'fill'];
-
-if (typeof Int8Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Int8Array.prototype[method]) { Int8Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Uint8Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Uint8Array.prototype[method]) { Uint8Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Uint8ClampedArray !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Uint8ClampedArray.prototype[method]) { Uint8ClampedArray.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Int16Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Int16Array.prototype[method]) { Int16Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Uint16Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Uint16Array.prototype[method]) { Uint16Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Int32Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Int32Array.prototype[method]) { Int32Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Uint32Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Uint32Array.prototype[method]) { Uint32Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Float32Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Float32Array.prototype[method]) { Float32Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof Float64Array !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!Float64Array.prototype[method]) { Float64Array.prototype[method] = Array.prototype[method]; }
-    }
-}
-if (typeof TypedArray !== 'undefined') {
-    for (var i = methods.length; i--;) {
-        var method = methods[i];
-        if (!TypedArray.prototype[method]) { TypedArray.prototype[method] = Array.prototype[method]; }
-    }
-}
-},{}],147:[function(require,module,exports){
+},{}],142:[function(require,module,exports){
 (function (global,Buffer){
 'use strict'
 
@@ -22001,7 +21782,7 @@ exports.clearCache = function clearCache() {
   }
 }
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"bit-twiddle":28,"buffer":2,"dup":53}],148:[function(require,module,exports){
+},{"bit-twiddle":28,"buffer":2,"dup":53}],143:[function(require,module,exports){
 "use strict"; "use restrict";
 
 module.exports = UnionFind;
@@ -22066,7 +21847,7 @@ proto.link = function(x, y) {
     ++ranks[xr];
   }
 }
-},{}],149:[function(require,module,exports){
+},{}],144:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -22125,7 +21906,7 @@ function unique(list, compare, sorted) {
 
 module.exports = unique
 
-},{}],150:[function(require,module,exports){
+},{}],145:[function(require,module,exports){
 "use strict"
 
 module.exports = createText
@@ -22152,7 +21933,7 @@ function createText(str, options) {
     options)
 }
 
-},{"./lib/vtext":151}],151:[function(require,module,exports){
+},{"./lib/vtext":146}],146:[function(require,module,exports){
 "use strict"
 
 module.exports = vectorizeText
@@ -22358,7 +22139,7 @@ function vectorizeText(str, canvas, context, options) {
   return processPixels(pixels, options, size)
 }
 
-},{"cdt2d":38,"clean-pslg":43,"ndarray":104,"planar-graph-to-polyline":114,"simplify-planar-graph":134,"surface-nets":139}],152:[function(require,module,exports){
+},{"cdt2d":38,"clean-pslg":43,"ndarray":100,"planar-graph-to-polyline":110,"simplify-planar-graph":130,"surface-nets":135}],147:[function(require,module,exports){
 var hiddenStore = require('./hidden-store.js');
 
 module.exports = createStore;
@@ -22379,7 +22160,7 @@ function createStore() {
     };
 }
 
-},{"./hidden-store.js":153}],153:[function(require,module,exports){
+},{"./hidden-store.js":148}],148:[function(require,module,exports){
 module.exports = hiddenStore;
 
 function hiddenStore(obj, key) {
@@ -22397,7 +22178,7 @@ function hiddenStore(obj, key) {
     return store;
 }
 
-},{}],154:[function(require,module,exports){
+},{}],149:[function(require,module,exports){
 // Original - @Gozola. 
 // https://gist.github.com/Gozala/1269991
 // This is a reimplemented version (with a few bug fixes).
@@ -22427,7 +22208,7 @@ function weakMap() {
     }
 }
 
-},{"./create-store.js":152}],155:[function(require,module,exports){
+},{"./create-store.js":147}],150:[function(require,module,exports){
 module.exports = require('cwise-compiler')({
     args: ['array', {
         offset: [1],
@@ -22479,7 +22260,7 @@ module.exports = require('cwise-compiler')({
     funcName: 'zeroCrossings'
 })
 
-},{"cwise-compiler":48}],156:[function(require,module,exports){
+},{"cwise-compiler":48}],151:[function(require,module,exports){
 "use strict"
 
 module.exports = findZeroCrossings
@@ -22492,6 +22273,6 @@ function findZeroCrossings(array, level) {
   core(array.hi(array.shape[0]-1), cross, level)
   return cross
 }
-},{"./lib/zc-core":155}]},{},[5]);
+},{"./lib/zc-core":150}]},{},[5]);
 </script>
 </html>
