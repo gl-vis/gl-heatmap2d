@@ -1,3 +1,5 @@
+require('enable-mobile')
+
 var fit = require('canvas-fit')
 var mouseWheel = require('mouse-wheel')
 var mouseChange = require('mouse-change')
