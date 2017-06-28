@@ -7,6 +7,7 @@ var createHeatmap = require('../')
 var createSelectBox = require('gl-select-box')
 var createSpikes = require('gl-spikes2d')
 var createPlot = require('gl-plot2d')
+var fps = require('fps-indicator')()
 
 var canvas = document.createElement('canvas')
 document.body.appendChild(canvas)

@@ -40,6 +40,7 @@
   "devDependencies": {
     "canvas-fit": "^1.5.0",
     "enable-mobile": "^1.0.7",
+    "fps-indicator": "^1.1.0",
     "gl-plot2d": "^1.2.0",
     "gl-select-box": "^1.0.1",
     "gl-spikes2d": "^1.0.1",
