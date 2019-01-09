@@ -34,7 +34,7 @@
     "binary-search-bounds": "^2.0.3",
     "gl-buffer": "^2.1.2",
     "gl-shader": "^4.0.5",
-    "glslify": "^6.4.1",
+    "glslify": "^7.0.0",
     "iota-array": "^1.0.0",
     "typedarray-pool": "^1.1.0"
   },
