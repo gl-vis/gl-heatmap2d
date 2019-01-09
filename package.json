@@ -8,6 +8,7 @@
     "url": "git+https://github.com/gl-vis/gl-heatmap2d.git"
   },
   "scripts": {
+    "postshrinkwrap": "chttps .",
     "build": "npm run build-a && npm run build-b",
     "build-a": "browserify example/1e6.js -g bubleify | indexhtmlify | metadataify | github-cornerify > gh-pages/1e6.html",
     "build-b": "browserify example/simple.js -g bubleify | indexhtmlify | metadataify | github-cornerify > gh-pages/index.html"
@@ -33,12 +34,13 @@
     "binary-search-bounds": "^2.0.3",
     "gl-buffer": "^2.1.2",
     "gl-shader": "^4.0.5",
-    "glslify": "^6.1.0",
+    "glslify": "^7.0.0",
     "iota-array": "^1.0.0",
     "typedarray-pool": "^1.1.0"
   },
   "devDependencies": {
     "canvas-fit": "^1.5.0",
+    "chttps": "^1.0.6",
     "enable-mobile": "^1.0.7",
     "fps-indicator": "^1.1.0",
     "gl-plot2d": "^1.2.0",
