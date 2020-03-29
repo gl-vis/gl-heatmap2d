@@ -173,6 +173,7 @@ proto.pick = function (x, y, value) {
   }
 }
 
+/* LO 29-03-2020: Update function modified to draw discretised heatmap instead of interpolated one */
 proto.update = function (options) {
   options = options || {}
 
@@ -185,6 +186,8 @@ proto.update = function (options) {
   this.xData = x
   this.yData = y
 
+  // LO 29-03-2020: Just to test the method for installing a different version of gl-heatmap2d
+  console.log("I'm inside Louise's function")
   var colorLevels = options.colorLevels || [0]
   var colorValues = options.colorValues || [0, 0, 0, 1]
   var colorCount = colorLevels.length
