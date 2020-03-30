@@ -173,7 +173,6 @@ proto.pick = function (x, y, value) {
   }
 }
 
-/* LO 29-03-2020: Update function modified to draw discretised heatmap instead of interpolated one */
 proto.update = function (options) {
   options = options || {}
 
@@ -186,18 +185,25 @@ proto.update = function (options) {
   this.xData = x
   this.yData = y
 
-  // LO 29-03-2020: Just to test the method for installing a different version of gl-heatmap2d
-  console.log("I'm inside Louise's function")
   var colorLevels = options.colorLevels || [0]
   var colorValues = options.colorValues || [0, 0, 0, 1]
   var colorCount = colorLevels.length
 
   var bounds = this.bounds
-  var lox = bounds[0] = x[0]
-  var loy = bounds[1] = y[0]
-  var hix = bounds[2] = x[x.length - 1]
-  var hiy = bounds[3] = y[y.length - 1]
 
+  /* LO 29-03-2020: To get squares to centre on data values */
+  /* var lox = bounds[0] = x[0] */
+  /* var loy = bounds[1] = y[0] */
+  var lox = bounds[0] = x[0] - (x[1] - x[0])/2 /* starting x value */
+  var loy = bounds[1] = y[0] - (y[1] - y[0])/2 /* starting y value */
+
+  /* LO 29-03-2020: Bounds needs to add half a square on each end */
+  /* var hix = bounds[2] = x[x.length - 1] */
+  /* var hiy = bounds[3] = y[y.length - 1] */
+  var hix = bounds[2] = x[x.length - 1] + (x[x.length - 1] - x[x.length - 2])/2
+  var hiy = bounds[3] = y[y.length - 1] + (y[y.length - 1] - y[y.length - 2])/2
+
+  // LO 29-03-2020: N.B. Resolution = 1 / range
   var xs = 1.0 / (hix - lox)
   var ys = 1.0 / (hiy - loy)
 
@@ -206,7 +212,9 @@ proto.update = function (options) {
 
   this.shape = [numX, numY]
 
-  var numVerts = (numX - 1) * (numY - 1) * (WEIGHTS.length >>> 1)
+  /* LO 29-03-2020: Change number of vertices to include every value of x and y (each value should be in the centre of a square of colour) */
+  // var numVerts = (numX - 1) * (numY - 1) * (WEIGHTS.length >>> 1)
+  var numVerts = numX * numY * (WEIGHTS.length >>> 1)
 
   this.numVertices = numVerts
 
@@ -217,17 +225,35 @@ proto.update = function (options) {
 
   var ptr = 0
 
-  for (var j = 0; j < numY - 1; ++j) {
-    var yc0 = ys * (y[j] - loy)
-    var yc1 = ys * (y[j + 1] - loy)
-    for (var i = 0; i < numX - 1; ++i) {
-      var xc0 = xs * (x[i] - lox)
-      var xc1 = xs * (x[i + 1] - lox)
+  /* LO 29-03-2020: go all the way to the edge of y */
+  /* for (var j = 0; j < numY - 1; ++j) { */
+  for (var j = 0; j < numY; ++j) {
+
+    /* LO 29-03-2020: The loop goes to the edge of y, therefore must make the max value of y
+          for this heatmap patch be y[j] + loy */
+    //  var yc0 =  ys * (y[j] - loy)
+    //  var yc1 =  ys * (y[j + 1] - loy)
+    var yc0 = j < numY - 1 ? ys * (y[j] - (y[j + 1] - y[j])/2 - loy) : ys * (y[j] - (y[j] - y[j - 1])/2 - loy)
+    var yc1 = j < numY - 1 ? ys * (y[j] + (y[j + 1] - y[j])/2 - loy) : ys * (y[j] + (y[j] - y[j - 1])/2 - loy)
+
+    /* LO 29-03-2020: go all the way to the edge of x */
+    /* for (var i = 0; i < numX - 1; ++i) { */
+    for (var i = 0; i < numX; ++i) {
+
+      /* LO 29-03-2020: The loop goes to the edge of x, therefore must make the max value of y
+            for this heatmap patch be x[j] + lox */
+      // var xc0 = xs * (x[i] - lox)
+      // var xc1 = xs * (x[i + 1] - lox)
+      var xc0 = i < numX - 1 ? xs * (x[i] - (x[i + 1] - x[i])/2 - lox) : xs * (x[i] - (x[i] - x[i - 1])/2 - lox)
+      var xc1 = i < numX - 1 ? xs * (x[i] + (x[i + 1] - x[i])/2 - lox) : xs * (x[i] + (x[i] - x[i - 1])/2 - lox)
+
 
       for (var dd = 0; dd < WEIGHTS.length; dd += 2) {
         var dx = WEIGHTS[dd]
         var dy = WEIGHTS[dd + 1]
-        var offset = (j + dy) * numX + (i + dx)
+        /* LO 29-03-2020: Edited to flatten the colour shader over all vertices for this patch */
+        /* var offset = (j + dy) * numX + (i + dx) */
+        var offset = j * numX + i
         var zc = z[offset]
         var colorIdx = bsearch.le(colorLevels, zc)
         var r, g, b, a
