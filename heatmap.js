@@ -182,6 +182,8 @@ proto.update = function (options) {
   var y = options.y || iota(shape[1])
   var z = options.z || new Float32Array(shape[0] * shape[1])
 
+  var isSmooth = options.zsmooth !== false
+
   this.xData = x
   this.yData = y
 
@@ -190,20 +192,23 @@ proto.update = function (options) {
   var colorCount = colorLevels.length
 
   var bounds = this.bounds
+  var lox, loy, hix, hiy
+  if (isSmooth) {
+    lox = bounds[0] = x[0]
+    loy = bounds[1] = y[0]
+    hix = bounds[2] = x[x.length - 1]
+    hiy = bounds[3] = y[y.length - 1]
+  } else {
+    /* To get squares to centre on data values */
+    lox = bounds[0] = x[0] - (x[1] - x[0]) / 2 /* starting x value */
+    loy = bounds[1] = y[0] - (y[1] - y[0]) / 2 /* starting y value */
 
-  /* LO 29-03-2020: To get squares to centre on data values */
-  /* var lox = bounds[0] = x[0] */
-  /* var loy = bounds[1] = y[0] */
-  var lox = bounds[0] = x[0] - (x[1] - x[0])/2 /* starting x value */
-  var loy = bounds[1] = y[0] - (y[1] - y[0])/2 /* starting y value */
+    /* Bounds needs to add half a square on each end */
+    hix = bounds[2] = x[x.length - 1] + (x[x.length - 1] - x[x.length - 2]) / 2
+    hiy = bounds[3] = y[y.length - 1] + (y[y.length - 1] - y[y.length - 2]) / 2
 
-  /* LO 29-03-2020: Bounds needs to add half a square on each end */
-  /* var hix = bounds[2] = x[x.length - 1] */
-  /* var hiy = bounds[3] = y[y.length - 1] */
-  var hix = bounds[2] = x[x.length - 1] + (x[x.length - 1] - x[x.length - 2])/2
-  var hiy = bounds[3] = y[y.length - 1] + (y[y.length - 1] - y[y.length - 2])/2
-
-  // LO 29-03-2020: N.B. Resolution = 1 / range
+    // N.B. Resolution = 1 / range
+  }
   var xs = 1.0 / (hix - lox)
   var ys = 1.0 / (hiy - loy)
 
@@ -212,9 +217,9 @@ proto.update = function (options) {
 
   this.shape = [numX, numY]
 
-  /* LO 29-03-2020: Change number of vertices to include every value of x and y (each value should be in the centre of a square of colour) */
-  // var numVerts = (numX - 1) * (numY - 1) * (WEIGHTS.length >>> 1)
-  var numVerts = numX * numY * (WEIGHTS.length >>> 1)
+  var numVerts = (
+    isSmooth ? (numX - 1) * (numY - 1) : numX * numY
+  ) * (WEIGHTS.length >>> 1)
 
   this.numVertices = numVerts
 
@@ -225,35 +230,35 @@ proto.update = function (options) {
 
   var ptr = 0
 
-  /* LO 29-03-2020: go all the way to the edge of y */
-  /* for (var j = 0; j < numY - 1; ++j) { */
-  for (var j = 0; j < numY; ++j) {
+  var ni = isSmooth ? numX - 1 : numX
+  var nj = isSmooth ? numY - 1 : numY
 
-    /* LO 29-03-2020: The loop goes to the edge of y, therefore must make the max value of y
-          for this heatmap patch be y[j] + loy */
-    //  var yc0 =  ys * (y[j] - loy)
-    //  var yc1 =  ys * (y[j + 1] - loy)
-    var yc0 = j < numY - 1 ? ys * (y[j] - (y[j + 1] - y[j])/2 - loy) : ys * (y[j] - (y[j] - y[j - 1])/2 - loy)
-    var yc1 = j < numY - 1 ? ys * (y[j] + (y[j + 1] - y[j])/2 - loy) : ys * (y[j] + (y[j] - y[j - 1])/2 - loy)
+  for (var j = 0; j < nj; ++j) {
+    var yc0, yc1
 
-    /* LO 29-03-2020: go all the way to the edge of x */
-    /* for (var i = 0; i < numX - 1; ++i) { */
-    for (var i = 0; i < numX; ++i) {
+    if (isSmooth) {
+      yc0 =  ys * (y[j] - loy)
+      yc1 =  ys * (y[j + 1] - loy)
+    } else {
+      yc0 = j < numY - 1 ? ys * (y[j] - (y[j + 1] - y[j])/2 - loy) : ys * (y[j] - (y[j] - y[j - 1])/2 - loy)
+      yc1 = j < numY - 1 ? ys * (y[j] + (y[j + 1] - y[j])/2 - loy) : ys * (y[j] + (y[j] - y[j - 1])/2 - loy)
+    }
 
-      /* LO 29-03-2020: The loop goes to the edge of x, therefore must make the max value of y
-            for this heatmap patch be x[j] + lox */
-      // var xc0 = xs * (x[i] - lox)
-      // var xc1 = xs * (x[i + 1] - lox)
-      var xc0 = i < numX - 1 ? xs * (x[i] - (x[i + 1] - x[i])/2 - lox) : xs * (x[i] - (x[i] - x[i - 1])/2 - lox)
-      var xc1 = i < numX - 1 ? xs * (x[i] + (x[i + 1] - x[i])/2 - lox) : xs * (x[i] + (x[i] - x[i - 1])/2 - lox)
+    for (var i = 0; i < ni; ++i) {
+      var xc0, xc1
 
+      if (isSmooth) {
+        xc0 = xs * (x[i] - lox)
+        xc1 = xs * (x[i + 1] - lox)
+      } else {
+        xc0 = i < numX - 1 ? xs * (x[i] - (x[i + 1] - x[i])/2 - lox) : xs * (x[i] - (x[i] - x[i - 1])/2 - lox)
+        xc1 = i < numX - 1 ? xs * (x[i] + (x[i + 1] - x[i])/2 - lox) : xs * (x[i] + (x[i] - x[i - 1])/2 - lox)
+      }
 
       for (var dd = 0; dd < WEIGHTS.length; dd += 2) {
         var dx = WEIGHTS[dd]
         var dy = WEIGHTS[dd + 1]
-        /* LO 29-03-2020: Edited to flatten the colour shader over all vertices for this patch */
-        /* var offset = (j + dy) * numX + (i + dx) */
-        var offset = j * numX + i
+        var offset = isSmooth ? (j + dy) * numX + (i + dx) : j * numX + i
         var zc = z[offset]
         var colorIdx = bsearch.le(colorLevels, zc)
         var r, g, b, a
