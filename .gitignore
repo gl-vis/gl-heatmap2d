@@ -10,11 +10,3 @@ lib-cov
 pids
 logs
 results
-
-npm-debug.log
-node_modules/*
-package-lock.json
-*.DS_Store
-gh-pages
-.Rproj.user
-gl-heatmap2d.Rproj
