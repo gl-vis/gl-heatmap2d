@@ -199,11 +199,11 @@ proto.update = function (options) {
     hix = bounds[2] = x[x.length - 1]
     hiy = bounds[3] = y[y.length - 1]
   } else {
-    /* To get squares to centre on data values */
-    lox = bounds[0] = x[0] + (x[1] - x[0]) / 2 /* starting x value */
-    loy = bounds[1] = y[0] + (y[1] - y[0]) / 2 /* starting y value */
+    // To get squares to centre on data values
+    lox = bounds[0] = x[0] + (x[1] - x[0]) / 2 // starting x value
+    loy = bounds[1] = y[0] + (y[1] - y[0]) / 2 // starting y value
 
-    /* Bounds needs to add half a square on each end */
+    // Bounds needs to add half a square on each end
     hix = bounds[2] = x[x.length - 1] + (x[x.length - 1] - x[x.length - 2]) / 2
     hiy = bounds[3] = y[y.length - 1] + (y[y.length - 1] - y[y.length - 2]) / 2
 
